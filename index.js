@@ -1,11 +1,28 @@
 
 const express = require('express');
-const bodyParser = require('body-parser');
 const { Client } = require('pg');
 const app = express();
-const querystring = require('node:querystring');
+const cors = require('cors');
 
 app.use(express.json());
+
+app.use(cors());
+
+app.use(function (req, res, next) {
+    // Website you wish to allow to connect
+    res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173/');
+
+    // Request methods you wish to allow
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+
+    // Request headers you wish to allow
+    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type');
+
+
+    // Pass to next layer of middleware
+    next();
+});
+
 
 const port = process.env.PORT || 8080;
 
@@ -126,9 +143,6 @@ app.get("/getToolByTags", async(req, res)=> {
 
 
 app.post("/createUser", async (req, res) => {
-
-    
-
     let username = req.body.username;
     let password = req.body.password;
     let email = req.body.email;
@@ -136,63 +150,84 @@ app.post("/createUser", async (req, res) => {
     let created = `${date.getFullYear()}-${("0" + (date.getMonth() + 1)).slice(-2) }-${date.getDate()}`;
     let characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     let salt = "";
+    let check_email_query = `SELECT COUNT(uuid) FROM users WHERE email = '${email}' OR login = '${username}';`;
 
-    //TODO: rework checking to utilise promises so it actually works 
-    // let check_login_query = `SELECT COUNT(uuid) FROM users WHERE login = '${username}';`;
-    // let check_email_query = `SELECT COUNT(uuid) FROM users WHERE email = '${email}';`;
-    // let login_exists = 0;
-    // let email_exists = 0;
+    console.log(check_email_query);
 
-    // try {
-    // client.query(check_login_query, (err, result) => {
-    //     if(err) {
-    //         throw err;
-    //     }
-        
-    //     login_exists = result.rows.at(0)['count'];
-    // })
-    // }catch(err) {
-    //     throw "error on query" + err;
-    // }
-
-    // try {
-    //     client.query(check_email_query, (err, result) => {
-    //         if(err) {
-    //             throw err;
-    //         }
-            
-    //         email_exists = result.rows.at(0)['count'];
-    //     })
-    // }catch(err) {
-    //     throw "error on query" + err;
-    // }
-
-    for(let i = 0; i < 6; i++) {
-        salt += characters.at(Math.round((Math.random() * (Math.floor(characters.length-1)))));
+    console.log("before the promise in here");
+    const checkerPromise = async () => {
+        return new Promise( (resolve, reject) => {
+                client.query(check_email_query, (err, result) => {
+                    if(err) {
+                        throw err;
+                    }
+                    resolve(result.rows.at(0)['count']);
+                })
+        });
     }
 
-
-
-    password += salt;
-
-
-    let hash = require('crypto').createHash('sha256').update(password, 'utf-8').digest('base64');
-
-    let query = `INSERT INTO users (login, password, email, passwordsalt, datecreated, status) VALUES ('${username}', '${hash}', '${email}', '${salt}', '${created}', 'false');`;
-
-    try {
-        client.query(query, (err, result)=> {
-            if(err) {
+    checkerPromise().then( count => {
+        if(count > 0) {
+            res.status(200).json("A user with this email/login already exists!");
+        } else {
+            for(let i = 0; i < 6; i++) {
+                salt += characters.at(Math.round((Math.random() * (Math.floor(characters.length-1)))));
+            }
+        
+        
+        
+            password += salt;
+        
+        
+            let hash = require('crypto').createHash('sha256').update(password, 'utf-8').digest('base64');
+        
+            let query = `INSERT INTO users (login, password, email, passwordsalt, datecreated, status) VALUES ('${username}', '${hash}', '${email}', '${salt}', '${created}', 'false');`;
+        
+            try {
+                client.query(query, (err, result)=> {
+                    if(err) {
+                        throw err;
+                    }
+                    res.status(200).json("successfully added user");
+                });
+            }catch(err) {
                 throw err;
             }
-            res.status(200).json("successfully added user");
-        });
-    }catch(err) {
-        throw err;
-    }
-    
-    
+        }
+    });
+    console.log("after the promise in here");
 });
+
+app.post("/authUser", (req, res) => {
+    let login = req.body.login;
+    let authPassword = req.body.password;
+    let auth_query = `SELECT passwordsalt, password FROM users WHERE login LIKE '${login}' OR email LIKE '${login}'`;
+
+    const authPromise = async () => {
+        return new Promise( (resolve, reject) => {
+            client.query(auth_query, (err, result) => {
+                if(err) {
+                    throw err;
+                }
+                resolve([result.rows.at(0)["passwordsalt"], result.rows.at(0)["password"]]);
+            })
+    });
+    }
+
+    authPromise().then(salt => {
+        let theSalt = salt[0];
+        let thePassword = salt[1];
+        authPassword += theSalt;
+        hash = require('crypto').createHash('sha256').update(authPassword, 'utf-8').digest('base64');
+
+        if(thePassword != hash) {
+            res.status(401).json("wrong password");
+            return;
+        }
+
+        res.status(200).json("correct password");
+    });
+})
 
 //query example
 
