@@ -212,18 +212,25 @@ app.post("/createUser", async (req, res) => {
 app.post("/authUser", (req, res) => {
     let login = req.body.login;
     let authPassword = req.body.password;
+    let user_query = `SELECT COUNT(uuid) FROM users WHERE login LIKE '${login}' OR email LIKE '${login}'`;
     let auth_query = `SELECT passwordsalt, password FROM users WHERE login LIKE '${login}' OR email LIKE '${login}'`;
 
     const authPromise = async () => {
         return new Promise( (resolve) => {
             client.query(auth_query, (err, result) => {
+
                 if(err) {
                     throw err;
                 }
-                resolve([result.rows.at(0)["passwordsalt"], result.rows.at(0)["password"]]);
-            })
-    });
+                if(result.rows.at(0)["count"] == 0) {
+                    resolve(false);
+                }
+                resolve(true);
+            
+            });
+        });
     }
+
 
     authPromise().then(salt => {
         let theSalt = salt[0];
@@ -233,11 +240,36 @@ app.post("/authUser", (req, res) => {
 
         if(thePassword !== hash) {
             res.status(401).json("wrong password");
+
             return;
         }
 
-        res.status(200).json("correct password");
+        const authPromise = async () => {
+            return new Promise( (resolve, reject) => {
+                client.query(auth_query, (err, result) => {
+                    if(err) {
+                        throw err;
+                    }
+                    resolve([result.rows.at(0)["passwordsalt"], result.rows.at(0)["password"]]);
+                })
+        });
+        }
+    
+        authPromise().then(salt => {
+            let theSalt = salt[0];
+            let thePassword = salt[1];
+            authPassword += theSalt;
+            hash = require('crypto').createHash('sha256').update(authPassword, 'utf-8').digest('base64');
+    
+            if(thePassword != hash) {
+                res.status(401).json("wrong password");
+                return;
+            }
+    
+            res.status(200).json("correct password");
+        });
     });
+    
 })
 
 //query example
