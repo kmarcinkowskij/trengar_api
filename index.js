@@ -10,13 +10,14 @@ app.use(cors());
 
 app.use(function (req, res, next) {
     // Website you wish to allow to connect
-    res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173/');
+    res.setHeader('Access-Control-Allow-Origin', '*');
 
     // Request methods you wish to allow
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
 
     // Request headers you wish to allow
     res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type');
+
 
 
     // Pass to next layer of middleware
@@ -68,6 +69,15 @@ app.get("/user", async (req, res) => {
     }
 });
 
+
+app.get("/test", async(req, res) => {
+    try {
+        res.status(200).json("Hello there! You've just sent a test request to trengar's very own API!");
+    }catch(err){
+        res.status(400).json("error: " + err);
+    }
+})
+
 app.get("/getToolByName", async(req, res)=> {
 
     let toolName = req.query.name;
@@ -86,12 +96,11 @@ app.get("/getToolByName", async(req, res)=> {
 
 
 
-app.get("/getToolByTags", async(req, res)=> {
+app.post("/getToolByTags", async(req, res)=> {
 
     let toolTags = req.body.tags;
     let toolType = req.body.type;
     let toolSystems = null;
-    let tagsLength = null;
 
     try {
         toolSystems = req.body.systemTypes;
@@ -101,13 +110,15 @@ app.get("/getToolByTags", async(req, res)=> {
     
     let query = `SELECT tool_name, tool_creator, tool_type, tool_description, tags, price, tool_operating_systems, ease_of_use, type, tool_type, tool_icon_link FROM tool WHERE LOWER(tool.tool_type) = LOWER('${toolType}') `;
 
+    console.log(toolTags);
     //ADD TAGS TO QUERY
-    if(toolTags != null) {
-        tagsLength = Array.from(toolTags).length;
-        toolTags.map((item, i) => {
+    if(toolTags != null && toolTags[0] !== '') {
+        toolTags.map((item) => {
             query += `AND '${item}' = ANY(tags)`;
         });
     }
+
+    console.log(query);
 
     //TODO: ADD OPERATING SYSTEMS TO QUERY
     if(toolSystems != null) {
@@ -130,7 +141,7 @@ app.get("/getToolByTags", async(req, res)=> {
             if(err) {
                 throw 0;
             }
-            if(result.rowCount == 0) {
+            if(result.rowCount === 0) {
                 res.status(404).json("We're terribly sorry, but no software that fits your requirements was found");
             }
 
@@ -156,7 +167,7 @@ app.post("/createUser", async (req, res) => {
 
     console.log("before the promise in here");
     const checkerPromise = async () => {
-        return new Promise( (resolve, reject) => {
+        return new Promise( (resolve) => {
                 client.query(check_email_query, (err, result) => {
                     if(err) {
                         throw err;
@@ -184,7 +195,7 @@ app.post("/createUser", async (req, res) => {
             let query = `INSERT INTO users (login, password, email, passwordsalt, datecreated, status) VALUES ('${username}', '${hash}', '${email}', '${salt}', '${created}', 'false');`;
         
             try {
-                client.query(query, (err, result)=> {
+                client.query(query, (err)=> {
                     if(err) {
                         throw err;
                     }
@@ -204,7 +215,7 @@ app.post("/authUser", (req, res) => {
     let auth_query = `SELECT passwordsalt, password FROM users WHERE login LIKE '${login}' OR email LIKE '${login}'`;
 
     const authPromise = async () => {
-        return new Promise( (resolve, reject) => {
+        return new Promise( (resolve) => {
             client.query(auth_query, (err, result) => {
                 if(err) {
                     throw err;
@@ -218,9 +229,9 @@ app.post("/authUser", (req, res) => {
         let theSalt = salt[0];
         let thePassword = salt[1];
         authPassword += theSalt;
-        hash = require('crypto').createHash('sha256').update(authPassword, 'utf-8').digest('base64');
+        let hash = require('crypto').createHash('sha256').update(authPassword, 'utf-8').digest('base64');
 
-        if(thePassword != hash) {
+        if(thePassword !== hash) {
             res.status(401).json("wrong password");
             return;
         }
